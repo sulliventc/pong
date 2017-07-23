@@ -73,19 +73,28 @@ void game() {
     mvaddch(0, COLS / 2, ACS_TTEE);
     mvaddch(LINES-1, COLS / 2, ACS_BTEE);
 
+    setup_aio_buffer();
+    aio_read(&kbcbuf);
+    signal(SIGIO, on_input);
+    signal(SIGALRM, update);
+    set_ticker(NORMAL);
+
     player.score = nonPlayer.score = 0;
     ball.x_dir = ball.y_dir = 1;
     ball.symbol = SYM_BAL;
 
     while (player.score != WIN_COND && nonPlayer.score != WIN_COND) {
         score = false;
+
         ball.x_pos = COLS/2;
         ball.y_pos = LINES/2;
         ball.x_dir *= -1;
         ball.y_dir *= -1;
 
-        signal(SIGALRM, update);
-        set_ticker(NORMAL);
+        nonPlayer.x_pos = 2;
+        nonPlayer.y_pos = (LINES/2) - 2;
+        player.x_pos = COLS-3;
+        player.y_pos = (LINES/2) - 2;
 
         while (!score) {
             refresh();
@@ -93,13 +102,38 @@ void game() {
     }
 }
 
+void on_input(int signum) {
+    int c;
+    char *cp = (char *) kbcbuf.aio_buf;
+    mvaddch(2, 2, 'x');
+
+    if (aio_error(&kbcbuf) != 0) {
+        perror("reading failed");
+    } else {
+        if (aio_return(&kbcbuf) == 1) {
+            c = *cp;
+            mvaddch(2, 2, c);
+            switch (c) {
+                case 'q': case EOF:
+                    //TODO: Actually handle quitting
+                    player.score = nonPlayer.score = WIN_COND;
+                    score = true;
+                    break;
+                case 'w':
+                    player_move = -1;
+                    break;
+                case 's':
+                    player_move = 1;
+                    break;
+            }
+        }
+    }
+    aio_read(&kbcbuf);
+}
+
 void update(int signum) {
     mvprintw(2, (COLS/2)-2, "%i", nonPlayer.score);
     mvprintw(2, (COLS/2)+2, "%i", player.score);
-    nonPlayer.x_pos = 2;
-    nonPlayer.y_pos = (LINES/2) - 2;
-    player.x_pos = COLS-3;
-    player.y_pos = (LINES/2) - 2;
     update_paddles();
     mvaddch(ball.y_pos, ball.x_pos, (ball.x_pos == COLS/2 ? ACS_VLINE : BLANK));
     ball.x_pos += ball.x_dir;
@@ -108,8 +142,8 @@ void update(int signum) {
     if (ball.y_pos == 1 || ball.y_pos == LINES - 2) {
         ball.y_dir = -ball.y_dir;
     }
-    if ((ball.x_pos == nonPlayer.x_pos+1 && (ball.y_pos >= nonPlayer.y_pos && ball.y_pos <= nonPlayer.y_pos+5)) ||
-        (ball.x_pos == player.x_pos-1 && (ball.y_pos >= player.y_pos && ball.y_pos <= player.y_pos+5))) {
+    if ((ball.x_pos == nonPlayer.x_pos+1 && (ball.y_pos >= nonPlayer.y_pos && ball.y_pos <= nonPlayer.y_pos+7)) ||
+        (ball.x_pos == player.x_pos-1 && (ball.y_pos >= player.y_pos && ball.y_pos <= player.y_pos+7))) {
         ball.x_dir *= -1;
     }
     if (ball.x_pos == 1) {
@@ -128,23 +162,24 @@ void update(int signum) {
 void update_paddles() {
     //TODO: Real AI
     mvvline(1, nonPlayer.x_pos, BLANK, LINES-2);
-    nonPlayer.y_pos = ball.y_pos - 2;
+    nonPlayer.y_pos = ball.y_pos - 3;
     if (nonPlayer.y_pos <= 0) {
         nonPlayer.y_pos = 1;
-    } else if (nonPlayer.y_pos+4 >= LINES-2) {
-        nonPlayer.y_pos = LINES-6;
+    } else if (nonPlayer.y_pos+6 >= LINES-2) {
+        nonPlayer.y_pos = LINES-8;
     }
-    mvvline(nonPlayer.y_pos, nonPlayer.x_pos, ACS_VLINE, 5);
+    mvvline(nonPlayer.y_pos, nonPlayer.x_pos, ACS_VLINE, 7);
 
     //TODO: Real input
     mvvline(1, player.x_pos, BLANK, LINES-2);
-    player.y_pos = ball.y_pos - 2;
+    player.y_pos += player_move;
     if (player.y_pos <= 0) {
         player.y_pos = 1;
-    } else if (player.y_pos+4 >= LINES-2) {
-        player.y_pos = LINES-6;
+    } else if (player.y_pos+6 >= LINES-2) {
+        player.y_pos = LINES-8;
     }
-    mvvline(player.y_pos, player.x_pos, ACS_VLINE, 5);
+    mvvline(player.y_pos, player.x_pos, ACS_VLINE, 7);
+    player_move = 0;
 }
 
 void cleanup() {
@@ -162,4 +197,16 @@ void add_border() {
     mvaddch(0, COLS-1, ACS_URCORNER);
     mvaddch(LINES-1, 0, ACS_LLCORNER);
     mvaddch(LINES-1, COLS-1, ACS_LRCORNER);
+}
+
+void setup_aio_buffer() {
+    static char input[1];
+
+    kbcbuf.aio_fildes = STDIN_FILENO;
+    kbcbuf.aio_buf = input;
+    kbcbuf.aio_nbytes = 1;
+    kbcbuf.aio_offset = 0;
+
+    kbcbuf.aio_sigevent.sigev_notify = SIGEV_SIGNAL;
+    kbcbuf.aio_sigevent.sigev_signo = SIGIO;
 }

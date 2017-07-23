@@ -39,18 +39,21 @@ struct p_npc {
 struct p_ball   ball;
 struct p_pc     player;
 struct p_npc    nonPlayer;
+struct aiocb    kbcbuf;
 
 int diff;
+int player_move;
 bool score;
-bool move_player_paddle;
 
 void setup();
 void menu();
 void difficulty();
 void game();
+void on_input(int);
 void update(int);
 void update_paddles();
 void cleanup();
 void add_border();
+void setup_aio_buffer();
 
 #endif //PONG_PONG_H
