@@ -10,15 +10,16 @@
 #include <ncurses.h>
 #include <unistd.h>
 #include <stdlib.h>
+#include <time.h>
 
 #include "set_ticker.h"
 
 #define SYM_BAL 'o'
 #define BLANK ' '
 #define WIN_COND 5
-#define SLOW 100
-#define NORMAL 75
-#define FAST 50
+#define DIFF_EASY 100
+#define DIFF_NORM 75
+#define DIFF_HARD 50
 
 struct p_ball {
     int     x_pos, y_pos,
@@ -38,12 +39,13 @@ struct p_npc {
 
 struct p_ball   ball;
 struct p_pc     player;
-struct p_npc    nonPlayer;
+struct p_npc    non_player;
 struct aiocb    kbcbuf;
 
-int diff;
-int player_move;
-bool score;
+int g_diff;
+int g_player_move;
+int g_limiter;
+bool g_score;
 
 void setup();
 void menu();
@@ -52,6 +54,7 @@ void game();
 void on_input(int);
 void update(int);
 void update_paddles();
+int  ai_target();
 void cleanup();
 void add_border();
 void setup_aio_buffer();

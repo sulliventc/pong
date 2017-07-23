@@ -1,5 +1,9 @@
 #include "pong.h"
 
+/*
+ * Main function
+ * pass control to other functions
+ */
 int main(int argc, char *argv[]) {
     setup();
     menu();
@@ -8,7 +12,12 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+/*
+ * Setup ncurses
+ */
 void setup() {
+    g_limiter = 0;
+
     initscr();
     if (COLS <= 40 || LINES <= 12) {
         mvprintw(0,0,"Play area too small.");
@@ -27,6 +36,10 @@ void setup() {
     curs_set(0);
 }
 
+/*
+ * Main menu
+ * any key moves to difficulty selection
+ */
 void menu() {
     clear();
     add_border();
@@ -52,7 +65,12 @@ void menu() {
     difficulty();
 }
 
+/*
+ * Difficulty selection screen
+ * recurses on bad input
+ */
 void difficulty() {
+    int c;
     clear();
     add_border();
 
@@ -62,11 +80,28 @@ void difficulty() {
     mvprintw(10, (COLS/2)-22, "3. Hard - Fast Ball Speed");
 
     refresh();
-    diff = getch() - '0';
-    (diff > 0 && diff < 4 ? game : difficulty)();
+    c = getch() - '0';
+    if (c > 0 && c < 4) {
+        switch (c) {
+            case 1: g_diff = DIFF_EASY; break;
+            case 2: g_diff = DIFF_NORM; break;
+            case 3: g_diff = DIFF_HARD; break;
+        }
+        game();
+    } else {
+        difficulty();
+    }
 }
 
+/*
+ * Last minute setup and
+ * main game loop w/ inner
+ * refresh loop.
+ */
 void game() {
+    time_t t;
+    int dir;
+
     clear();
     add_border();
     mvvline(0, COLS / 2, ACS_VLINE, LINES);
@@ -77,53 +112,75 @@ void game() {
     aio_read(&kbcbuf);
     signal(SIGIO, on_input);
     signal(SIGALRM, update);
-    set_ticker(NORMAL);
+    set_ticker(g_diff);
 
-    player.score = nonPlayer.score = 0;
+    player.score = non_player.score = 0;
     ball.x_dir = ball.y_dir = 1;
     ball.symbol = SYM_BAL;
+    srand((unsigned) time(&t));
 
-    while (player.score != WIN_COND && nonPlayer.score != WIN_COND) {
-        score = false;
+    /*
+     * main loop
+     * continues until winner
+     */
+    while (player.score != WIN_COND && non_player.score != WIN_COND) {
+        g_score = false;
 
         ball.x_pos = COLS/2;
         ball.y_pos = LINES/2;
-        ball.x_dir *= -1;
-        ball.y_dir *= -1;
+        dir = rand() % 4;
+        switch (dir) {
+            case 0:
+                ball.x_dir = -1;
+                ball.y_dir = -1;
+                break;
+            case 1:
+                ball.x_dir = -1;
+                ball.y_dir = 1;
+                break;
+            case 2:
+                ball.x_dir = 1;
+                ball.y_dir = 1;
+                break;
+            case 3:
+                ball.x_dir = 1;
+                ball.y_dir = -1;
+        }
 
-        nonPlayer.x_pos = 2;
-        nonPlayer.y_pos = (LINES/2) - 2;
+        non_player.x_pos = 2;
+        non_player.y_pos = (LINES/2) - 2;
         player.x_pos = COLS-3;
         player.y_pos = (LINES/2) - 2;
 
-        while (!score) {
+        while (!g_score) {
             refresh();
         }
     }
 }
 
+/*
+ * SIGIO handler
+ */
 void on_input(int signum) {
     int c;
     char *cp = (char *) kbcbuf.aio_buf;
-    mvaddch(2, 2, 'x');
 
     if (aio_error(&kbcbuf) != 0) {
         perror("reading failed");
     } else {
         if (aio_return(&kbcbuf) == 1) {
             c = *cp;
-            mvaddch(2, 2, c);
             switch (c) {
                 case 'q': case EOF:
                     //TODO: Actually handle quitting
-                    player.score = nonPlayer.score = WIN_COND;
-                    score = true;
+                    player.score = non_player.score = WIN_COND;
+                    g_score = true;
                     break;
                 case 'w':
-                    player_move = -1;
+                    g_player_move = -1;
                     break;
                 case 's':
-                    player_move = 1;
+                    g_player_move = 1;
                     break;
             }
         }
@@ -131,63 +188,114 @@ void on_input(int signum) {
     aio_read(&kbcbuf);
 }
 
+/*
+ * update ball location, handle bounce or score logic
+ * calls update_paddles()
+ */
 void update(int signum) {
-    mvprintw(2, (COLS/2)-2, "%i", nonPlayer.score);
+    mvprintw(2, (COLS/2)-2, "%i", non_player.score);
     mvprintw(2, (COLS/2)+2, "%i", player.score);
     update_paddles();
     mvaddch(ball.y_pos, ball.x_pos, (ball.x_pos == COLS/2 ? ACS_VLINE : BLANK));
     ball.x_pos += ball.x_dir;
     ball.y_pos += ball.y_dir;
 
+    /*
+     * bounce or score logic
+     */
     if (ball.y_pos == 1 || ball.y_pos == LINES - 2) {
         ball.y_dir = -ball.y_dir;
     }
-    if ((ball.x_pos == nonPlayer.x_pos+1 && (ball.y_pos >= nonPlayer.y_pos && ball.y_pos <= nonPlayer.y_pos+7)) ||
+    if ((ball.x_pos == non_player.x_pos+1 && (ball.y_pos >= non_player.y_pos && ball.y_pos <= non_player.y_pos+5)) ||
         (ball.x_pos == player.x_pos-1 && (ball.y_pos >= player.y_pos && ball.y_pos <= player.y_pos+7))) {
         ball.x_dir *= -1;
     }
     if (ball.x_pos == 1) {
-        score = true;
+        g_score = true;
         player.score++;
     }
     if (ball.x_pos == COLS - 2) {
-        score = true;
-        nonPlayer.score++;
+        g_score = true;
+        non_player.score++;
     }
-    if (!score) {
+    if (!g_score) {
         mvaddch(ball.y_pos, ball.x_pos, ball.symbol);
     }
 }
 
+/*
+ * Called from update(int) to move paddles
+ * at set intervals.
+ */
 void update_paddles() {
+    int ai_y_target;
+    /*
+     * AI movement handling
+     */
     //TODO: Real AI
-    mvvline(1, nonPlayer.x_pos, BLANK, LINES-2);
-    nonPlayer.y_pos = ball.y_pos - 3;
-    if (nonPlayer.y_pos <= 0) {
-        nonPlayer.y_pos = 1;
-    } else if (nonPlayer.y_pos+6 >= LINES-2) {
-        nonPlayer.y_pos = LINES-8;
+    if (ball.x_dir == 1) {
+        g_limiter = 0;
+    } else {
+        g_limiter++;
     }
-    mvvline(nonPlayer.y_pos, nonPlayer.x_pos, ACS_VLINE, 7);
+    mvvline(1, non_player.x_pos, BLANK, LINES - 2);
+    if (g_limiter % 5 == 0 && g_limiter > g_diff / 4) {
+        ai_y_target = ai_target();
+        if (non_player.y_pos > ai_y_target - 2) {
+            non_player.y_pos--;
+        } else if (non_player.y_pos < ai_y_target - 2) {
+            non_player.y_pos++;
+        }
+        if (non_player.y_pos <= 0) {
+            non_player.y_pos = 1;
+        } else if (non_player.y_pos + 5 >= LINES - 2) {
+            non_player.y_pos = LINES - 6;
+        }
+    }
+    mvvline(non_player.y_pos, non_player.x_pos, ACS_VLINE, 5);
 
-    //TODO: Real input
+    /*
+     * User movement handling
+     */
     mvvline(1, player.x_pos, BLANK, LINES-2);
-    player.y_pos += player_move;
+    player.y_pos += g_player_move;
     if (player.y_pos <= 0) {
         player.y_pos = 1;
     } else if (player.y_pos+6 >= LINES-2) {
         player.y_pos = LINES-8;
     }
     mvvline(player.y_pos, player.x_pos, ACS_VLINE, 7);
-    player_move = 0;
+    g_player_move = 0;
 }
 
+/*
+ * Simulate ball to get ai target.
+ */
+int ai_target() {
+    struct p_ball sim = ball;
+    while (sim.x_pos != non_player.x_pos) {
+        sim.x_pos += sim.x_dir;
+        sim.y_pos += sim.y_dir;
+
+        if (sim.y_pos == 1 || sim.y_pos == LINES - 2) {
+            sim.y_dir = -sim.y_dir;
+        }
+    }
+    return sim.y_pos;
+}
+
+/*
+ * Leave it like you found it
+ */
 void cleanup() {
     attroff(COLOR_PAIR(1));
     set_ticker(0);
     endwin();
 }
 
+/*
+ * Make it pretty
+ */
 void add_border() {
     mvvline(0, 0, ACS_VLINE, LINES);
     mvvline(0, COLS-1, ACS_VLINE, LINES);
@@ -199,6 +307,9 @@ void add_border() {
     mvaddch(LINES-1, COLS-1, ACS_LRCORNER);
 }
 
+/*
+ * Does what it says on the tin
+ */
 void setup_aio_buffer() {
     static char input[1];
 
