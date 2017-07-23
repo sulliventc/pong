@@ -51,6 +51,7 @@ void setup();
 void menu();
 void difficulty();
 void game();
+void pause_menu();
 void on_input(int);
 void update(int);
 void update_paddles();

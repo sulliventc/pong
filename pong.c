@@ -16,12 +16,12 @@ int main(int argc, char *argv[]) {
  * Setup ncurses
  */
 void setup() {
-    g_limiter = 0;
+    g_limiter = 0;                              // Used to limit movement speed of AI paddle
 
     initscr();
-    if (COLS <= 40 || LINES <= 12) {
+    if (COLS < 80 || LINES < 24) {
         mvprintw(0,0,"Play area too small.");
-        mvprintw(1,0,"Recommended size: 80 x 24");
+        mvprintw(1,0,"Set to 80 x 24");
         refresh();
         getch();
         endwin();
@@ -51,7 +51,7 @@ void menu() {
     mvprintw(9,  (COLS/2)-22, "$$ |      $$ |  $$ |$$ |\\$$$ |$$ |  $$ |    ");
     mvprintw(10, (COLS/2)-22, "$$ |       $$$$$$  |$$ | \\$$ |\\$$$$$$  |$$\\ ");
     mvprintw(11, (COLS/2)-22, "\\__|       \\______/ \\__|  \\__| \\______/ \\__|");
-    mvprintw(13, (COLS/2)-22, "Control with UP and DOWN arrows.");
+    mvprintw(13, (COLS/2)-22, "Control with w for UP and s for DOWN");
     mvprintw(14, (COLS/2)-22, "Press any key to start!");
 
     // TODO: Restrict play area properly
@@ -104,9 +104,9 @@ void game() {
 
     clear();
     add_border();
-    mvvline(0, COLS / 2, ACS_VLINE, LINES);
-    mvaddch(0, COLS / 2, ACS_TTEE);
-    mvaddch(LINES-1, COLS / 2, ACS_BTEE);
+    mvvline(0, COLS / 2, ACS_VLINE, LINES); // add mid-bar
+    mvaddch(0, COLS / 2, ACS_TTEE);         // Mid-bar junction
+    mvaddch(LINES-1, COLS / 2, ACS_BTEE);   // Mid-bar junction
 
     setup_aio_buffer();
     aio_read(&kbcbuf);
@@ -114,6 +114,8 @@ void game() {
     signal(SIGALRM, update);
     set_ticker(g_diff);
 
+    non_player.x_pos = 2;
+    player.x_pos = COLS-3;
     player.score = non_player.score = 0;
     ball.x_dir = ball.y_dir = 1;
     ball.symbol = SYM_BAL;
@@ -128,33 +130,69 @@ void game() {
 
         ball.x_pos = COLS/2;
         ball.y_pos = LINES/2;
-        dir = rand() % 4;
+        dir = rand() % 4;           // Randomly decide ball direction
         switch (dir) {
-            case 0:
+            case 0:                 // Up, Left
                 ball.x_dir = -1;
                 ball.y_dir = -1;
                 break;
-            case 1:
+            case 1:                 // Down, Left
                 ball.x_dir = -1;
                 ball.y_dir = 1;
                 break;
-            case 2:
+            case 2:                 // Down, Right
                 ball.x_dir = 1;
                 ball.y_dir = 1;
                 break;
-            case 3:
+            case 3:                 // Up, Right
                 ball.x_dir = 1;
                 ball.y_dir = -1;
         }
 
-        non_player.x_pos = 2;
-        non_player.y_pos = (LINES/2) - 2;
-        player.x_pos = COLS-3;
+        non_player.y_pos = (LINES/2) - 2;   // Reset paddle positions
         player.y_pos = (LINES/2) - 2;
 
         while (!g_score) {
             refresh();
         }
+        //TODO: Game over screen
+    }
+}
+
+/*
+ * Display pause menu to allow option selection
+ * Rescurse on bad input
+ */
+void pause_menu() {
+    set_ticker(0);                                  // Stop play
+
+    int c;
+
+    clear();
+    add_border();
+
+    mvprintw(4, (COLS/2)-22, "Game Paused:");
+    mvprintw(6, (COLS/2)-22, "1. Return to game");
+    mvprintw(8, (COLS/2)-22, "2. Reset game");
+    mvprintw(10, (COLS/2)-22, "3. Quit");
+
+    refresh();
+    c = getch() - '0';
+    if (c > 0 && c < 4) {
+        switch (c) {
+            case 2: player.score = non_player.score = 0;        // Reset
+            case 1:                                             // Return to game
+                set_ticker(g_diff);
+                clear();
+                add_border();
+                mvvline(0, COLS / 2, ACS_VLINE, LINES);
+                mvaddch(0, COLS / 2, ACS_TTEE);
+                mvaddch(LINES-1, COLS / 2, ACS_BTEE);
+                break;
+            case 3: player.score = non_player.score = WIN_COND; g_score = true; break; // Quit
+        }
+    } else {
+        pause_menu();                                           // Recurse on bad input
     }
 }
 
@@ -172,9 +210,7 @@ void on_input(int signum) {
             c = *cp;
             switch (c) {
                 case 'q': case EOF:
-                    //TODO: Actually handle quitting
-                    player.score = non_player.score = WIN_COND;
-                    g_score = true;
+                    pause_menu();
                     break;
                 case 'w':
                     g_player_move = -1;
@@ -193,32 +229,32 @@ void on_input(int signum) {
  * calls update_paddles()
  */
 void update(int signum) {
-    mvprintw(2, (COLS/2)-2, "%i", non_player.score);
-    mvprintw(2, (COLS/2)+2, "%i", player.score);
+    mvprintw(2, (COLS/2)-2, "%i", non_player.score); // Display score
+    mvprintw(2, (COLS/2)+2, "%i", player.score);     // Display score
     update_paddles();
-    mvaddch(ball.y_pos, ball.x_pos, (ball.x_pos == COLS/2 ? ACS_VLINE : BLANK));
+    mvaddch(ball.y_pos, ball.x_pos, (ball.x_pos == COLS/2 ? ACS_VLINE : BLANK)); // Clear ball or re-add midline
     ball.x_pos += ball.x_dir;
     ball.y_pos += ball.y_dir;
 
     /*
      * bounce or score logic
      */
-    if (ball.y_pos == 1 || ball.y_pos == LINES - 2) {
+    if (ball.y_pos == 1 || ball.y_pos == LINES - 2) { // Hit top or bottom
         ball.y_dir = -ball.y_dir;
     }
-    if ((ball.x_pos == non_player.x_pos+1 && (ball.y_pos >= non_player.y_pos && ball.y_pos <= non_player.y_pos+5)) ||
-        (ball.x_pos == player.x_pos-1 && (ball.y_pos >= player.y_pos && ball.y_pos <= player.y_pos+7))) {
+    if ((ball.x_pos == non_player.x_pos+1 && (ball.y_pos >= non_player.y_pos && ball.y_pos <= non_player.y_pos+4)) ||
+        (ball.x_pos == player.x_pos-1 && (ball.y_pos >= player.y_pos && ball.y_pos <= player.y_pos+6))) {               // Hit paddle
         ball.x_dir *= -1;
     }
-    if (ball.x_pos == 1) {
+    if (ball.x_pos == 1) { // Player scored
         g_score = true;
         player.score++;
     }
-    if (ball.x_pos == COLS - 2) {
+    if (ball.x_pos == COLS - 2) { // AI scored
         g_score = true;
         non_player.score++;
     }
-    if (!g_score) {
+    if (!g_score) { // No bounce, no score, move the ball
         mvaddch(ball.y_pos, ball.x_pos, ball.symbol);
     }
 }
@@ -232,40 +268,40 @@ void update_paddles() {
     /*
      * AI movement handling
      */
-    //TODO: Real AI
     if (ball.x_dir == 1) {
         g_limiter = 0;
     } else {
         g_limiter++;
     }
-    mvvline(1, non_player.x_pos, BLANK, LINES - 2);
-    if (g_limiter % 5 == 0 && g_limiter > g_diff / 4) {
-        ai_y_target = ai_target();
+    mvvline(1, non_player.x_pos, BLANK, LINES - 2);             // Clear paddle
+    if (g_limiter % 5 == 0 && g_limiter > g_diff / 4) {         // move after short pause, then limit speed
+        ai_y_target = ai_target();                              // Simulate ball, move to target
+        //TODO: Fudge simulation by random amount.
         if (non_player.y_pos > ai_y_target - 2) {
             non_player.y_pos--;
         } else if (non_player.y_pos < ai_y_target - 2) {
             non_player.y_pos++;
         }
-        if (non_player.y_pos <= 0) {
+        if (non_player.y_pos <= 0) {                            // y_pos went past top line
             non_player.y_pos = 1;
-        } else if (non_player.y_pos + 5 >= LINES - 2) {
+        } else if (non_player.y_pos + 5 >= LINES - 2) {         // y_pos went past bottom line
             non_player.y_pos = LINES - 6;
         }
     }
-    mvvline(non_player.y_pos, non_player.x_pos, ACS_VLINE, 5);
+    mvvline(non_player.y_pos, non_player.x_pos, ACS_VLINE, 5);  // Redraw paddle
 
     /*
      * User movement handling
      */
-    mvvline(1, player.x_pos, BLANK, LINES-2);
-    player.y_pos += g_player_move;
-    if (player.y_pos <= 0) {
+    mvvline(1, player.x_pos, BLANK, LINES-2);                   // Clear paddle
+    player.y_pos += g_player_move;                              // No pause for player
+    if (player.y_pos <= 0) {                                    // y_pos went past top line
         player.y_pos = 1;
-    } else if (player.y_pos+6 >= LINES-2) {
+    } else if (player.y_pos+6 >= LINES-2) {                     // y_pos went past bottom line
         player.y_pos = LINES-8;
     }
-    mvvline(player.y_pos, player.x_pos, ACS_VLINE, 7);
-    g_player_move = 0;
+    mvvline(player.y_pos, player.x_pos, ACS_VLINE, 7);          // Redraw paddle
+    g_player_move = 0;                                          // Reset player movement modifier
 }
 
 /*
