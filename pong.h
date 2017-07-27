@@ -37,26 +37,27 @@ struct p_npc {
             score;
 };
 
-struct p_ball   ball;
-struct p_pc     player;
-struct p_npc    non_player;
-struct aiocb    kbcbuf;
+struct p_ball   g_ball;
+struct p_pc     g_player;
+struct p_npc    g_non_player;
+struct aiocb    g_kbcbuf;
 
 int g_diff;
 int g_player_move;
-int g_limiter;
+int g_ai_speed_limiter;
+int g_ai_fudge;
 bool g_score;
 
-void setup();
-void menu();
-void difficulty();
-void game();
+void setup_ncurses();
+void cleanup_ncurses();
+void main_menu();
+void difficulty_menu();
 void pause_menu();
+void game_loop();
 void on_input(int);
 void update(int);
 void update_paddles();
-int  ai_target();
-void cleanup();
+int  calculate_ai_target();
 void add_border();
 void setup_aio_buffer();
 
